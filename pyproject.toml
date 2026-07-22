@@ -1,0 +1,10 @@
+[tool.setuptools]
+name = "ha-omada-ble"
+version = "0.1.0"
+description = "Home Assistant integration for BLE sensors via TP-Link Omada EAP MQTT"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+
+[project.urls]
+Homepage = "https://github.com/daverave999/ha-omada-ble"

@@ -1,0 +1,12 @@
+{
+  "domain": "omada_ble",
+  "name": "Omada BLE Sensor",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["mqtt"],
+  "documentation": "https://github.com/daverave999/ha-omada-ble",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/daverave999/ha-omada-ble/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

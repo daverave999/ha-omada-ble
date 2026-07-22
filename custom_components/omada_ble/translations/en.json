@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Omada BLE Sensor",
+        "description": "Configure the MQTT topic that your Omada EAPs publish BLE data to. This is set in the Omada SDN controller under IoT Service → Bluetooth → Transport Streams.",
+        "data": {
+          "mqtt_topic": "MQTT topic"
+        }
+      },
+      "discover": {
+        "title": "Discovered BLE Devices",
+        "description": "Found {count} BLE device(s) on the MQTT topic.\n\nDiscovered devices:\n{discovered_devices}\n\nSelect devices to add, or choose 'Add manually' to enter a MAC address yourself.",
+        "data": {
+          "selected_macs": "Select devices to add",
+          "add_manual": "Add device manually instead"
+        }
+      },
+      "sensor": {
+        "title": "Add BLE Sensor",
+        "description": "Add a BLE sensor by MAC address. Leave MAC empty and submit to finish setup.\n\nAlready added:\n{sensors_added}\n\nDiscovered on network:\n{discovered_devices}",
+        "data": {
+          "sensor_mac": "MAC address (e.g. A4:C1:38:B1:5D:E0)",
+          "sensor_name": "Name (e.g. Loft Ambient)",
+          "sensor_format": "Advertisement format"
+        }
+      }
+    },
+    "error": {
+      "invalid_mac": "Invalid MAC address format. Use XX:XX:XX:XX:XX:XX or XXXXXXXXXXXX",
+      "mac_already_added": "This MAC address has already been added",
+      "mac_required": "Enter a MAC address or leave empty to finish"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Omada BLE Sensors",
+        "description": "Configured sensors:\n{sensor_list}"
+      }
+    }
+  }
+}

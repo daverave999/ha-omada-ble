@@ -1,0 +1,10 @@
+{
+  "name": "Omada BLE Sensor",
+  "content_in_root": false,
+  "filename": "ha-omada-ble.zip",
+  "hide_default_branch": false,
+  "homeassistant": "2024.1.0",
+  "zip_release": true,
+  "domains": ["sensor"],
+  "country": ["GB"]
+}
