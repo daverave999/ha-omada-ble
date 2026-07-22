@@ -13,6 +13,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
@@ -36,6 +37,11 @@ CONFIG_SCHEMA = vol.Schema({
 }, extra=vol.ALLOW_EXTRA)
 
 
+def normalize_mac(mac: str) -> str:
+    """Normalize MAC to uppercase, no colons."""
+    return mac.replace(":", "").upper()
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Omada BLE from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -43,11 +49,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     topic = entry.data.get(CONF_MQTT_TOPIC, DEFAULT_MQTT_TOPIC)
     sensors = entry.data.get("sensors", [])
 
-    # Build MAC → sensor config lookup (colon-stripped uppercase)
+    # Build MAC → sensor config lookup (normalized: uppercase, no colons)
     mac_map: dict[str, dict[str, Any]] = {}
     for sensor in sensors:
-        mac_clean = sensor["mac"].replace(":", "").upper()
+        mac_clean = normalize_mac(sensor["mac"])
         mac_map[mac_clean] = sensor
+        _LOGGER.info("Registered sensor: mac=%s name=%s format=%s",
+                      mac_clean, sensor.get("name"), sensor.get("format"))
 
     # State storage: MAC → decoded values
     hass.data[DOMAIN][entry.entry_id] = {
@@ -70,10 +78,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if "data" not in payload or "mac" not in payload:
             return
 
-        mac = payload["mac"]
+        raw_mac = payload["mac"]
+        mac = normalize_mac(raw_mac)
         hex_data = payload["data"]
 
+        _LOGGER.debug("Received MQTT message: mac=%s (raw=%s), data length=%d",
+                       mac, raw_mac, len(hex_data))
+
         if mac not in mac_map:
+            _LOGGER.debug("Unknown MAC: %s (not in mac_map: %s)",
+                           mac, list(mac_map.keys()))
             return
 
         sensor_cfg = mac_map[mac]
@@ -81,15 +95,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         decoded_formats = decode_omada_ble(hex_data, known_format)
         if not decoded_formats:
-            _LOGGER.debug("No decodable data for %s", mac)
+            _LOGGER.warning("No decodable data for %s (format=%s, hex=%s)",
+                            mac, known_format, hex_data[:40])
             return
 
         # Use the first successfully decoded format
-        readings = list(decoded_formats.values())[0]
+        fmt_name, readings = next(iter(decoded_formats.items()))
+        _LOGGER.debug("Decoded %s via %s: %s", mac, fmt_name, readings)
 
         # Add metadata
         readings["lastseen"] = payload.get("lastseen", "")
-        readings["ap_mac"] = payload.get("apMac", "")
+        readings["ap_mac"] = normalize_mac(payload.get("apMac", ""))
         readings["sensor_name"] = sensor_cfg["name"]
 
         hass.data[DOMAIN][entry.entry_id]["state"][mac] = readings
@@ -97,14 +113,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Fire event to trigger entity updates
         hass.bus.async_fire(f"{DOMAIN}_update_{mac}", {"mac": mac})
 
-        _LOGGER.debug("Decoded %s: %s", mac, readings)
-
-    # Subscribe via HA's MQTT integration (new API)
-    from homeassistant.components import mqtt
-
+    # Subscribe via HA's MQTT integration
     unsub = await mqtt.async_subscribe(hass, topic, _message_handler)
     hass.data[DOMAIN][entry.entry_id]["unsubscribe"] = unsub
-    _LOGGER.info("Subscribed to MQTT topic: %s", topic)
+    _LOGGER.info("Subscribed to MQTT topic: %s (watching %d MACs: %s)",
+                 topic, len(mac_map), list(mac_map.keys()))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -112,7 +125,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    # Unsubscribe from MQTT
     unsub = hass.data[DOMAIN].get(entry.entry_id, {}).get("unsubscribe")
     if unsub:
         unsub()
