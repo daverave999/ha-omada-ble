@@ -39,7 +39,7 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         self.mqtt_topic: str = DEFAULT_MQTT_TOPIC
         self.sensors: list[dict] = []
-        self.discovered: dict[str, dict] = {}  # MAC -> {rssi, ap_mac, lastseen}
+        self.discovered: dict[str, dict] = {}
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step — MQTT topic configuration."""
@@ -53,7 +53,7 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_MQTT_TOPIC, default=DEFAULT_MQTT_TOPIC): str,
-            }),
+            }, extra=vol.ALLOW_EXTRA),
             errors=errors,
             description_placeholders={},
         )
@@ -62,6 +62,8 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Discover BLE devices from the MQTT topic."""
         if user_input is not None:
             selected = user_input.get("selected_macs", [])
+            if isinstance(selected, str):
+                selected = [selected]
             for mac in selected:
                 mac_clean = normalize_mac(mac)
                 self.sensors.append({
@@ -91,7 +93,7 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema({
             vol.Optional("selected_macs"): vol.All(vol.Coerce(list), []),
             vol.Optional("add_manual", default=False): bool,
-        })
+        }, extra=vol.ALLOW_EXTRA)
 
         return self.async_show_form(
             step_id="discover",
@@ -159,7 +161,7 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             mac_input = user_input.get(CONF_SENSOR_MAC, "").strip()
             name = user_input.get(CONF_SENSOR_NAME, "").strip()
-            fmt = user_input[CONF_SENSOR_FORMAT]
+            fmt = user_input.get(CONF_SENSOR_FORMAT, FORMAT_AUTO)
 
             if not mac_input:
                 if self.sensors:
@@ -205,7 +207,7 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     FORMAT_ATC: "ATC native (0x181A)",
                     FORMAT_BTHOME_V2: "BTHome v2 (0xFCD2)",
                 }),
-            }),
+            }, extra=vol.ALLOW_EXTRA),
             errors=errors,
             description_placeholders={
                 "sensors_added": sensors_added,
