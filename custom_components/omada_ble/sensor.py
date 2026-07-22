@@ -22,17 +22,8 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN,
-    CONF_SENSOR_FORMAT,
-    FORMAT_ATC,
-    FORMAT_BTHOME_V2,
-    FORMAT_AUTO,
-    ENTITY_MAP,
-)
-from .decoder import decode_omada_ble
+from .const import DOMAIN, FORMAT_ATC, FORMAT_BTHOME_V2, FORMAT_AUTO
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -128,12 +119,6 @@ SENSOR_DEFS = {
         "icon": "mdi:water",
         "suffix": "moisture",
     },
-    "mass_kg": {
-        "device_class": None,
-        "unit": "kg",
-        "icon": "mdi:weight",
-        "suffix": "mass",
-    },
 }
 
 
@@ -157,9 +142,11 @@ class OmadaBleSensor(SensorEntity):
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
-        self._attr_name = f"{name} {sensor_key.replace('_', ' ').title()}"
+        self._attr_name = f"{name} {SENSOR_DEFS.get(sensor_key, {}).get('suffix', sensor_key).replace('_', ' ').title()}"
         self._attr_unique_id = f"omada_ble_{mac}_{SENSOR_DEFS.get(sensor_key, {}).get('suffix', sensor_key)}"
-        self._attr_state_class = "measurement" if device_class in (
+
+        # Determine state_class
+        measurement_classes = {
             SensorDeviceClass.TEMPERATURE,
             SensorDeviceClass.HUMIDITY,
             SensorDeviceClass.PRESSURE,
@@ -171,14 +158,16 @@ class OmadaBleSensor(SensorEntity):
             SensorDeviceClass.CURRENT,
             SensorDeviceClass.POWER,
             SensorDeviceClass.ENERGY,
-        ) else None
+        }
+        self._attr_state_class = "measurement" if device_class in measurement_classes else None
 
+        mac_formatted = f"{mac[0:2]}:{mac[2:4]}:{mac[4:6]}:{mac[6:8]}:{mac[8:10]}:{mac[10:12]}"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, mac)},
             name=name,
             manufacturer="Xiaomi",
             model="LYWSD03MMC (pvvx firmware)",
-            connections={("mac", f"{mac[0:2]}:{mac[2:4]}:{mac[4:6]}:{mac[6:8]}:{mac[8:10]}:{mac[10:12]}")},
+            connections={("mac", mac_formatted)},
         )
 
     @property
@@ -186,12 +175,30 @@ class OmadaBleSensor(SensorEntity):
         """Return device info."""
         return self._device_info
 
-    def update_state(self, readings: dict[str, Any]) -> None:
-        """Update sensor state from decoded readings."""
-        value = readings.get(self._sensor_key)
-        if value is not None:
-            self._attr_native_value = value
-            self.async_write_ha_state()
+    async def async_added_to_hass(self) -> None:
+        """Register for state updates when entity is added to HA."""
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                f"{DOMAIN}_update_{self._mac}",
+                self._handle_update,
+            )
+        )
+
+    @callback
+    def _handle_update(self, event) -> None:
+        """Handle state update event from the integration."""
+        entry_data = self.hass.data.get(DOMAIN, {})
+        for entry_id, data in entry_data.items():
+            if not isinstance(data, dict):
+                continue
+            state = data.get("state", {})
+            if self._mac in state:
+                readings = state[self._mac]
+                value = readings.get(self._sensor_key)
+                if value is not None:
+                    self._attr_native_value = value
+                    self.async_write_ha_state()
+                return
 
 
 async def async_setup_entry(
@@ -204,7 +211,6 @@ async def async_setup_entry(
     mac_map: dict[str, dict] = data["mac_map"]
 
     entities: list[OmadaBleSensor] = []
-    entity_map: dict[str, list[str]] = {}  # MAC → list of entity_ids
 
     for mac, sensor_cfg in mac_map.items():
         name = sensor_cfg.get("name", mac)
@@ -221,22 +227,6 @@ async def async_setup_entry(
                 icon=sensor_def["icon"],
             )
             entities.append(entity)
-            entity_map.setdefault(mac, []).append(entity.entity_id)
 
-    hass.data[DOMAIN]["_entity_map"] = entity_map
     async_add_entities(entities, True)
-
-    # Register a state listener that updates entities when new data arrives
-    async def _state_listener(event):
-        """Handle state updates from the MQTT subscription."""
-        for mac, readings in data.get("state", {}).items():
-            for entity in entities:
-                if entity._mac == mac:
-                    entity.update_state(readings)
-
-    # Store a callback for the __init__.py to trigger updates
-    data["update_callback"] = lambda: hass.async_create_task(
-        hass.bus.async_fire(f"{DOMAIN}_update", {})
-    )
-
-    hass.bus.async_listen(f"{DOMAIN}_update", _state_listener)
+    _LOGGER.info("Added %d sensor entities for %d devices", len(entities), len(mac_map))

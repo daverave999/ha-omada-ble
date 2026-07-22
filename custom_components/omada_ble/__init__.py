@@ -11,22 +11,16 @@ import json
 import logging
 from typing import Any
 
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
     CONF_MQTT_TOPIC,
-    CONF_SENSOR_FORMAT,
     DEFAULT_MQTT_TOPIC,
-    FORMAT_ATC,
-    FORMAT_BTHOME_V2,
     FORMAT_AUTO,
 )
 from .decoder import decode_omada_ble
@@ -37,7 +31,7 @@ PLATFORMS = [Platform.SENSOR]
 
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
-        vol.Optional(CONF_MQTT_TOPIC, default=DEFAULT_MQTT_TOPIC): cv.string,
+        vol.Optional(CONF_MQTT_TOPIC, default=DEFAULT_MQTT_TOPIC): str,
     })
 }, extra=vol.ALLOW_EXTRA)
 
@@ -60,10 +54,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "mac_map": mac_map,
         "state": {},
         "topic": topic,
+        "unsubscribe": None,
     }
 
-    # Subscribe to MQTT topic
-    async def _message_handler(msg):
+    # Callback when MQTT message arrives
+    @callback
+    def _message_handler(msg):
         """Handle incoming MQTT messages from Omada EAPs."""
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
@@ -98,18 +94,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         hass.data[DOMAIN][entry.entry_id]["state"][mac] = readings
 
-        # Dispatch state update to sensor entities
-        for mac_key, entity_ids in hass.data[DOMAIN].get("_entity_map", {}).items():
-            if mac_key == mac:
-                for entity_id in entity_ids:
-                    hass.helpers.event.async_call_later(0, lambda _: None)
-                    # Trigger state update via coordinator-style refresh
-                    hass.states.async_set(entity_id, None)
+        # Fire event to trigger entity updates
+        hass.bus.async_fire(f"{DOMAIN}_update_{mac}", {"mac": mac})
 
         _LOGGER.debug("Decoded %s: %s", mac, readings)
 
-    # Subscribe via HA's MQTT integration
-    await hass.components.mqtt.async_subscribe(topic, _message_handler)
+    # Subscribe via HA's MQTT integration (new API)
+    from homeassistant.components import mqtt
+
+    unsub = await mqtt.async_subscribe(hass, topic, _message_handler)
+    hass.data[DOMAIN][entry.entry_id]["unsubscribe"] = unsub
     _LOGGER.info("Subscribed to MQTT topic: %s", topic)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -118,6 +112,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # Unsubscribe from MQTT
+    unsub = hass.data[DOMAIN].get(entry.entry_id, {}).get("unsubscribe")
+    if unsub:
+        unsub()
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
