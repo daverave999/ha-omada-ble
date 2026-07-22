@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
@@ -27,98 +27,101 @@ from .const import DOMAIN, FORMAT_ATC, FORMAT_BTHOME_V2, FORMAT_AUTO
 
 _LOGGER = logging.getLogger(__name__)
 
-# Mapping from decoded keys to HA sensor entity properties
+# Measurement keys the decoder can produce, mapped to HA sensor properties.
+# Only entities for keys that actually appear in decoded data will show values.
 SENSOR_DEFS = {
     "temperature": {
         "device_class": SensorDeviceClass.TEMPERATURE,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": UnitOfTemperature.CELSIUS,
         "icon": "mdi:thermometer",
         "suffix": "temperature",
     },
     "humidity": {
         "device_class": SensorDeviceClass.HUMIDITY,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": PERCENTAGE,
         "icon": "mdi:water-percent",
         "suffix": "humidity",
     },
     "battery": {
         "device_class": SensorDeviceClass.BATTERY,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": PERCENTAGE,
         "icon": "mdi:battery",
         "suffix": "battery",
     },
     "battery_mv": {
         "device_class": SensorDeviceClass.VOLTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": "mV",
         "icon": "mdi:battery-outline",
         "suffix": "battery_voltage",
     },
     "pressure": {
         "device_class": SensorDeviceClass.ATMOSPHERIC_PRESSURE,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": UnitOfPressure.HPA,
         "icon": "mdi:gauge",
         "suffix": "pressure",
     },
     "illuminance": {
         "device_class": SensorDeviceClass.ILLUMINANCE,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": LIGHT_LUX,
         "icon": "mdi:brightness-5",
         "suffix": "illuminance",
     },
     "co2": {
         "device_class": SensorDeviceClass.CO2,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": CONCENTRATION_PARTS_PER_MILLION,
         "icon": "mdi:molecule-co2",
         "suffix": "co2",
     },
     "pm25": {
         "device_class": SensorDeviceClass.PM25,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
         "icon": "mdi:dust",
         "suffix": "pm25",
     },
+    "pm10": {
+        "device_class": SensorDeviceClass.PM10,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        "icon": "mdi:dust",
+        "suffix": "pm10",
+    },
     "voltage": {
         "device_class": SensorDeviceClass.VOLTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": UnitOfElectricPotential.VOLT,
         "icon": "mdi:flash",
         "suffix": "voltage",
     },
-    "current": {
-        "device_class": SensorDeviceClass.CURRENT,
-        "unit": UnitOfElectricCurrent.AMPERE,
-        "icon": "mdi:current-ac",
-        "suffix": "current",
-    },
-    "power": {
-        "device_class": SensorDeviceClass.POWER,
-        "unit": UnitOfPower.WATT,
-        "icon": "mdi:flash",
-        "suffix": "power",
-    },
-    "energy": {
-        "device_class": SensorDeviceClass.ENERGY,
-        "unit": UnitOfEnergy.KILO_WATT_HOUR,
-        "icon": "mdi:lightning-bolt",
-        "suffix": "energy",
-    },
-    "count": {
-        "device_class": None,
-        "unit": None,
-        "icon": "mdi:counter",
-        "suffix": "count",
-    },
     "dewpoint": {
         "device_class": SensorDeviceClass.TEMPERATURE,
+        "state_class": SensorStateClass.MEASUREMENT,
         "unit": UnitOfTemperature.CELSIUS,
         "icon": "mdi:water-thermometer",
         "suffix": "dewpoint",
     },
-    "moisture": {
-        "device_class": SensorDeviceClass.HUMIDITY,
-        "unit": PERCENTAGE,
-        "icon": "mdi:water",
-        "suffix": "moisture",
+    "count": {
+        "device_class": None,
+        "state_class": None,
+        "unit": None,
+        "icon": "mdi:counter",
+        "suffix": "count",
     },
+}
+
+# Measurement keys that each format typically produces.
+# Used to create only relevant entities instead of all possible ones.
+FORMAT_DEFAULT_KEYS = {
+    FORMAT_ATC: {"temperature", "humidity", "battery", "battery_mv"},
+    FORMAT_BTHOME_V2: {"temperature", "humidity", "battery"},
+    FORMAT_AUTO: {"temperature", "humidity", "battery"},
 }
 
 
@@ -132,34 +135,18 @@ class OmadaBleSensor(SensorEntity):
         mac: str,
         name: str,
         sensor_key: str,
-        device_class: SensorDeviceClass | None,
-        unit: str | None,
-        icon: str,
+        sensor_def: dict[str, Any],
     ) -> None:
         """Initialize the sensor."""
         self._mac = mac
         self._sensor_key = sensor_key
-        self._attr_device_class = device_class
-        self._attr_native_unit_of_measurement = unit
-        self._attr_icon = icon
-        self._attr_name = f"{name} {SENSOR_DEFS.get(sensor_key, {}).get('suffix', sensor_key).replace('_', ' ').title()}"
-        self._attr_unique_id = f"omada_ble_{mac}_{SENSOR_DEFS.get(sensor_key, {}).get('suffix', sensor_key)}"
-
-        # Determine state_class
-        measurement_classes = {
-            SensorDeviceClass.TEMPERATURE,
-            SensorDeviceClass.HUMIDITY,
-            SensorDeviceClass.PRESSURE,
-            SensorDeviceClass.BATTERY,
-            SensorDeviceClass.ILLUMINANCE,
-            SensorDeviceClass.CO2,
-            SensorDeviceClass.PM25,
-            SensorDeviceClass.VOLTAGE,
-            SensorDeviceClass.CURRENT,
-            SensorDeviceClass.POWER,
-            SensorDeviceClass.ENERGY,
-        }
-        self._attr_state_class = "measurement" if device_class in measurement_classes else None
+        self._attr_device_class = sensor_def.get("device_class")
+        self._attr_state_class = sensor_def.get("state_class")
+        self._attr_native_unit_of_measurement = sensor_def.get("unit")
+        self._attr_icon = sensor_def.get("icon")
+        suffix = sensor_def.get("suffix", sensor_key)
+        self._attr_name = f"{name} {suffix.replace('_', ' ').title()}"
+        self._attr_unique_id = f"omada_ble_{mac}_{suffix}"
 
         mac_formatted = f"{mac[0:2]}:{mac[2:4]}:{mac[4:6]}:{mac[6:8]}:{mac[8:10]}:{mac[10:12]}"
         self._device_info = DeviceInfo(
@@ -214,17 +201,18 @@ async def async_setup_entry(
 
     for mac, sensor_cfg in mac_map.items():
         name = sensor_cfg.get("name", mac)
+        fmt = sensor_cfg.get("format", FORMAT_AUTO)
 
-        # Create entities for all supported measurement types.
-        # Only entities that actually receive data will show values.
-        for sensor_key, sensor_def in SENSOR_DEFS.items():
+        # Create entities only for measurement types the format typically produces
+        default_keys = FORMAT_DEFAULT_KEYS.get(fmt, FORMAT_DEFAULT_KEYS[FORMAT_AUTO])
+        for sensor_key in default_keys:
+            if sensor_key not in SENSOR_DEFS:
+                continue
             entity = OmadaBleSensor(
                 mac=mac,
                 name=name,
                 sensor_key=sensor_key,
-                device_class=sensor_def["device_class"],
-                unit=sensor_def["unit"],
-                icon=sensor_def["icon"],
+                sensor_def=SENSOR_DEFS[sensor_key],
             )
             entities.append(entity)
 
