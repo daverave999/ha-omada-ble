@@ -70,7 +70,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _message_handler(msg):
         """Handle incoming MQTT messages from Omada EAPs."""
         try:
-            payload = json.loads(msg.payload.decode("utf-8"))
+            raw = msg.payload
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            payload = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return
 

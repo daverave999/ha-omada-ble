@@ -3,7 +3,7 @@
 DOMAIN = "omada_ble"
 
 # MQTT topic that Omada EAPs publish BLE data to
-DEFAULT_MQTT_TOPIC = "homeassistant"
+DEFAULT_MQTT_TOPIC = "eap"
 
 # BLE service UUIDs
 UUID_ATC = 0x181A

@@ -113,7 +113,10 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         def _message_handler(msg):
             """Process incoming MQTT messages for device discovery."""
             try:
-                payload = json.loads(msg.payload.decode("utf-8"))
+                raw = msg.payload
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                payload = json.loads(raw)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 return
 
