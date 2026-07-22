@@ -8,8 +8,13 @@ import re
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectOptionDict,
+    SelectMode,
+)
 
 from .const import (
     DOMAIN,
@@ -29,6 +34,11 @@ MAC_PATTERN = re.compile(r"^([0-9A-Fa-f]{2}:?){6}$")
 def normalize_mac(mac: str) -> str:
     """Normalize MAC to uppercase, no colons."""
     return mac.replace(":", "").upper()
+
+
+def mac_display(mac: str) -> str:
+    """Format stripped MAC with colons for display."""
+    return f"{mac[0:2]}:{mac[2:4]}:{mac[4:6]}:{mac[6:8]}:{mac[8:10]}:{mac[10:12]}"
 
 
 class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -71,8 +81,6 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "name": f"BLE {mac}",
                     "format": FORMAT_AUTO,
                 })
-            if user_input.get("add_manual", False) or not selected:
-                return await self.async_step_sensor()
             return await self.async_step_sensor()
 
         # Subscribe to MQTT and collect devices for 5 seconds
@@ -81,19 +89,33 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not discovered_macs:
             return await self.async_step_sensor()
 
-        # Build description with discovered devices listed
-        device_lines = []
+        # Build multi-select options
+        options = []
         for mac, info in discovered_macs.items():
-            mac_display = f"{mac[0:2]}:{mac[2:4]}:{mac[4:6]}:{mac[6:8]}:{mac[8:10]}:{mac[10:12]}"
+            md = mac_display(mac)
             rssi = info.get("rssi", "?")
-            device_lines.append(f"• {mac_display} (RSSI: {rssi} dB)")
+            label = f"{md} (RSSI: {rssi} dB)"
+            if info.get("has_data"):
+                label += " ✓"
+            options.append(SelectOptionDict(value=md, label=label))
 
         self.discovered = discovered_macs
 
         schema = vol.Schema({
-            vol.Optional("selected_macs"): vol.All(vol.Coerce(list), []),
-            vol.Optional("add_manual", default=False): bool,
+            vol.Optional("selected_macs"): SelectSelector(
+                SelectSelectorConfig(
+                    options=options,
+                    multiple=True,
+                    mode=SelectMode.DROPDOWN,
+                )
+            ),
         }, extra=vol.ALLOW_EXTRA)
+
+        device_lines = []
+        for mac, info in discovered_macs.items():
+            md = mac_display(mac)
+            rssi = info.get("rssi", "?")
+            device_lines.append(f"• {md} (RSSI: {rssi} dB)")
 
         return self.async_show_form(
             step_id="discover",
@@ -188,12 +210,12 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         discovered_lines = []
         if self.discovered:
             for mac, info in self.discovered.items():
-                mac_display = f"{mac[0:2]}:{mac[2:4]}:{mac[4:6]}:{mac[6:8]}:{mac[8:10]}:{mac[10:12]}"
+                md = mac_display(mac)
                 rssi = info.get("rssi", "?")
-                discovered_lines.append(f"• {mac_display} (RSSI: {rssi} dB)")
+                discovered_lines.append(f"• {md} (RSSI: {rssi} dB)")
 
         sensors_added = "\n".join(
-            f"  • {s['name']} ({s['mac'][0:2]}:{s['mac'][2:4]}:{s['mac'][4:6]}:{s['mac'][6:8]}:{s['mac'][8:10]}:{s['mac'][10:12]}) — {s['format']}"
+            f"  • {s['name']} ({mac_display(s['mac'])}) — {s['format']}"
             for s in self.sensors
         ) if self.sensors else "None yet"
 
@@ -242,7 +264,7 @@ class OmadaBleOptionsFlow(config_entries.OptionsFlow):
 
         sensors = self.config_entry.data.get("sensors", [])
         sensor_list = "\n".join(
-            f"  • {s['name']} ({s['mac'][0:2]}:{s['mac'][2:4]}:{s['mac'][4:6]}:{s['mac'][6:8]}:{s['mac'][8:10]}:{s['mac'][10:12]}) — {s['format']}"
+            f"  • {s['name']} ({mac_display(s['mac'])}) — {s['format']}"
             for s in sensors
         )
 
