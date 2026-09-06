@@ -13,7 +13,7 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectOptionDict,
-    SelectMode,
+    SelectSelectorMode,
 )
 
 from .const import (
@@ -106,7 +106,7 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 SelectSelectorConfig(
                     options=options,
                     multiple=True,
-                    mode=SelectMode.DROPDOWN,
+                    mode=SelectSelectorMode.DROPDOWN,
                 )
             ),
         }, extra=vol.ALLOW_EXTRA)
