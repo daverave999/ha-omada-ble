@@ -11,8 +11,6 @@ from homeassistant.const import (
     PERCENTAGE,
     UnitOfTemperature,
     UnitOfPressure,
-    CONCENTRATION_PARTS_PER_MILLION,
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
     UnitOfElectricPotential,
     UnitOfPower,
     UnitOfElectricCurrent,
@@ -26,6 +24,23 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, FORMAT_ATC, FORMAT_BTHOME_V2, FORMAT_AUTO
 
 _LOGGER = logging.getLogger(__name__)
+
+# CO2 / air-quality units: UnitOfRatio / UnitOfDensity exist from HA 2026.8;
+# the old constants are deprecated (removed in 2027.8) but still present
+# everywhere else, so prefer new and fall back for older installs.
+try:
+    from homeassistant.const import UnitOfRatio, UnitOfDensity
+
+    PPM_UNIT = UnitOfRatio.PARTS_PER_MILLION
+    UG_M3_UNIT = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
+except (ImportError, AttributeError):
+    from homeassistant.const import (
+        CONCENTRATION_PARTS_PER_MILLION,
+        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    )
+
+    PPM_UNIT = CONCENTRATION_PARTS_PER_MILLION
+    UG_M3_UNIT = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
 
 # Measurement keys the decoder can produce, mapped to HA sensor properties.
 # Only entities for keys that actually appear in decoded data will show values.
@@ -75,21 +90,21 @@ SENSOR_DEFS = {
     "co2": {
         "device_class": SensorDeviceClass.CO2,
         "state_class": SensorStateClass.MEASUREMENT,
-        "unit": CONCENTRATION_PARTS_PER_MILLION,
+        "unit": PPM_UNIT,
         "icon": "mdi:molecule-co2",
         "suffix": "co2",
     },
     "pm25": {
         "device_class": SensorDeviceClass.PM25,
         "state_class": SensorStateClass.MEASUREMENT,
-        "unit": CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        "unit": UG_M3_UNIT,
         "icon": "mdi:dust",
         "suffix": "pm25",
     },
     "pm10": {
         "device_class": SensorDeviceClass.PM10,
         "state_class": SensorStateClass.MEASUREMENT,
-        "unit": CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        "unit": UG_M3_UNIT,
         "icon": "mdi:dust",
         "suffix": "pm10",
     },

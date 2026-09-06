@@ -63,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "state": {},
         "topic": topic,
         "unsubscribe": None,
+        "warned_macs": set(),
     }
 
     # Callback when MQTT message arrives
@@ -98,8 +99,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         decoded_formats = decode_omada_ble(hex_data, known_format)
         if not decoded_formats:
-            _LOGGER.warning("No decodable data for %s (format=%s, hex=%s)",
-                            mac, known_format, hex_data[:40])
+            # Log once per MAC, not per advert (phones and other non-sensor
+            # BLE devices in mac_map flood the log otherwise)
+            if mac not in hass.data[DOMAIN][entry.entry_id]["warned_macs"]:
+                hass.data[DOMAIN][entry.entry_id]["warned_macs"].add(mac)
+                _LOGGER.warning(
+                    "No decodable data for %s (format=%s); silencing further "
+                    "adverts for this MAC. Not an ATC/BTHome sensor? Remove it "
+                    "from the integration's device list.",
+                    mac, known_format,
+                )
             return
 
         # Use the first successfully decoded format

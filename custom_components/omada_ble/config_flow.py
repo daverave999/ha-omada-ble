@@ -95,8 +95,10 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             md = mac_display(mac)
             rssi = info.get("rssi", "?")
             label = f"{md} (RSSI: {rssi} dB)"
-            if info.get("has_data"):
-                label += " ✓"
+            if info.get("decodable"):
+                label += " ✓ (decodable sensor data)"
+            elif "decodable" in info:
+                label += " (no ATC/BTHome data — probably not a sensor)"
             options.append(SelectOptionDict(value=md, label=label))
 
         self.discovered = discovered_macs
@@ -164,7 +166,12 @@ class OmadaBleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ap_mac = normalize_mac(payload.get("apMac", ""))
                 existing = discovered.get(mac, {})
                 existing["ap_mac"] = ap_mac
-                existing["has_data"] = True
+                # Only mark decodable as a sensor candidate — phones and
+                # other non-sensor devices also send BLE adverts with data.
+                from .decoder import decode_omada_ble
+                from .const import FORMAT_AUTO
+                decoded = decode_omada_ble(payload["data"], FORMAT_AUTO)
+                existing["decodable"] = bool(decoded)
                 discovered[mac] = existing
 
         try:
